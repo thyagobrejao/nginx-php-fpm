@@ -20,6 +20,7 @@ fi
 # Set custom webroot
 if [ ! -z "$WEBROOT" ]; then
  sed -i "s#root /var/www/html;#root ${WEBROOT};#g" /etc/nginx/sites-available/default.conf
+ sed -i "s#root /var/www/html;#root ${WEBROOT};#g" /etc/nginx/sites-available/default-ssl.conf
 else
  webroot=/var/www/html
 fi
@@ -31,6 +32,9 @@ fi
 
 
 # Setup git variables
+# Disabling non valid certificates
+git config --global http.sslVerify false
+
 if [ ! -z "$GIT_EMAIL" ]; then
  git config --global user.email "$GIT_EMAIL"
 fi
@@ -211,18 +215,42 @@ if [[ "$RUN_SCRIPTS" == "1" ]] ; then
   fi
 fi
 
-if [ -z "$SKIP_COMPOSER" ]; then
-    # Try auto install for composer
-    if [ -f "/var/www/html/composer.lock" ]; then
-        if [ "$APPLICATION_ENV" == "development" ]; then
-            composer global require hirak/prestissimo
-            composer install --working-dir=/var/www/html
-        else
-            composer global require hirak/prestissimo
-            composer install --no-dev --working-dir=/var/www/html
-        fi
-    fi
-fi
+# if [ -z "$SKIP_COMPOSER" ]; then
+#     # Try auto install for composer
+#     if [ -f "/var/www/html/composer.lock" ]; then
+#         if [ "$APPLICATION_ENV" == "development" ]; then
+#             composer global require hirak/prestissimo
+#             composer install --working-dir=/var/www/html
+#         else
+#             composer global require hirak/prestissimo
+#             composer install --no-dev --working-dir=/var/www/html
+#         fi
+#     fi
+# fi
+
+# Generating certificate
+# openssl genrsa -out "/etc/nginx/ssl/default.key" 2048
+# openssl req -new -key "/etc/nginx/ssl/default.key" -out "/etc/nginx/ssl/default.csr" -subj "/CN=default/O=default/C=BR"
+# openssl x509 -req -days 365 -in "/etc/nginx/ssl/default.csr" -signkey "/etc/nginx/ssl/default.key" -out "/etc/nginx/ssl/default.crt"
+
+# Configure .env
+cd /var/www/html
+cp .env.example .env
+sed -i "s#APP_KEY=.*#APP_KEY=mwzfC5h85AsWK5W99qB5VHFTafKbw7vM#g" .env
+sed -i "s#DB_HOST=.*#DB_HOST=$DB_HOST#g" .env
+sed -i "s#DB_USERNAME=.*#DB_USERNAME=$DB_USERNAME#g" .env
+sed -i "s#DB_PASSWORD=.*#DB_PASSWORD=$DB_PASSWORD#g" .env
+sed -i "s#DB_SCHEMA=.*#DB_SCHEMA=$DB_SCHEMA#g" .env
+sed -i "s#DB_SCHEMA_ALERTA=.*#DB_SCHEMA_ALERTA=$DB_SCHEMA_ALERTA#g" .env
+
+# Install composer packages
+composer global require hirak/prestissimo
+composer install --working-dir=/var/www/html
+
+php artisan key:generate
+php artisan migrate
+
+chown -Rf nginx:nginx /var/www/html
 
 # Start supervisord and services
 exec /usr/bin/supervisord -n -c /etc/supervisord.conf
